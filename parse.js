@@ -113,8 +113,8 @@ export default function parseZone(zoneData, SERIAL) {
 				throw new Error(`First Argument to MX is prio (Number): ${zone} ${host} ${prio}`);
 			const ttl = isNaN(info.at(-1)) ? undefined : info.pop();
 			const ips = info.filter((i) => ipaddr.isValid(i));
-			const record = createMX(name, host, ttl);
-			zone.mx.push(mx);
+			const record = createMX(name, host, prio, ttl);
+			zone.mx.push(record);
 
 			if (ips.length > 0) {
 				if (zone.hosts.find((h) => h.name === record.name)) continue;
