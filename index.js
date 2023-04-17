@@ -1,3 +1,5 @@
+#! /usr/bin/env node
+
 import { existsSync, readFileSync } from 'fs';
 import yaml from 'yaml';
 import { program } from 'commander';

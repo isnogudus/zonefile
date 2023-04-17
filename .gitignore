@@ -1,2 +1,4 @@
 .DS_Store
+.serial
 node_modules
+zones.yaml
