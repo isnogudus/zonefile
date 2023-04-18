@@ -1,0 +1,15 @@
+home.arpa:
+  soa:
+    nameserver: ns1.home.arpa
+    email: admin@some.email.address
+  nameserver:
+    ns1: [192.168.1.1,fd00::1]
+  mx:
+    mail: [10, 192.168.1.2, fd00::2]
+  addresses:
+    extern: 172.16.0.1
+    extern2: fdff::1
+    extern3: [172.16.0.2 fdff::2]
+  hosts:
+    mickey: [litlle, mouse, 192.168.1.10,fd00::10]
+    mini: [192.168.1.11,fd00::11]
