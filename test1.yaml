@@ -11,5 +11,5 @@ home.arpa:
     extern2: fdff::1
     extern3: [172.16.0.2 fdff::2]
   hosts:
-    mickey: [litlle, mouse, 192.168.1.10,fd00::10]
+    mickey: [little, mouse, 192.168.1.10,fd00::10]
     mini: [192.168.1.11,fd00::11]
