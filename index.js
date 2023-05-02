@@ -2,7 +2,7 @@
 
 import { existsSync, readFileSync } from 'fs';
 import yaml from 'yaml';
-import { program } from 'commander';
+import { Command, Option } from 'commander';
 import { writeFile } from 'fs/promises';
 import { createReadStream, createWriteStream } from 'fs';
 
@@ -10,10 +10,16 @@ import { streamAsPromise } from './util.js';
 import parse from './parse.js';
 import unbound from './unbound.js';
 
+let program = new Command();
 program.name('zonefile').description('Program to generate zonefiles from yaml').version('0.1.0');
 program.option('-i, --input <VALUE>', 'Input YAML data (default stdin).');
 program.option('-o, --output <VALUE>', 'Output zone data (default stdout).');
 program.option('-s, --serial <VALUE>', 'File containing serial number.', '.serial');
+program.addOption(
+	new Option('-f, --format <VALUE>', 'Output format.')
+		.default('unbound')
+		.choices(['unbound', 'nsd'])
+);
 
 program.parse();
 
@@ -35,4 +41,8 @@ const zoneData = yaml.parse(await streamAsPromise(zoneStream));
 
 const zones = parse(zoneData, SERIAL);
 
-unbound(writer, zones);
+switch (options.format) {
+	case 'unbound':
+		unbound(writer, zones);
+		break;
+}

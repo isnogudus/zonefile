@@ -56,11 +56,16 @@ function mx_record(writer, data) {
 	localData(writer, `${zone}.`, ttl, 'IN MX', `${prio} ${name}`);
 }
 
+function srv_record(writer, data) {
+	const { name, service, prio, weight, port, ttl } = data;
+	localData(writer, service, ttl, 'IN SRV', `${prio} ${weight} ${port} ${name}`);
+}
+
 export default function unbound(writer, zones) {
 	writer.write('server:\n');
 
 	zones.forEach((zone) => {
-		const { name, hosts, ptrs, ns, mx } = zone;
+		const { name, hosts, ptrs, ns, mx, srv } = zone;
 
 		writer.write(`\n${INDENT}${LOCAL_ZONE} ${name} static\n`);
 		soa(writer, zone);
@@ -75,6 +80,9 @@ export default function unbound(writer, zones) {
 		});
 		ptrs.forEach((ptr) => {
 			ptr_record(writer, ptr);
+		});
+		srv.forEach((service) => {
+			srv_record(writer, service);
 		});
 	});
 }

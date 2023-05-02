@@ -22,6 +22,16 @@ function createPtr(zone, hostname, ip, ttl) {
 	return { name: hostString(hostname, zone), ip: ipaddr.parse(ip), ttl };
 }
 
+function createSRV(zone, hostname, service, port, prio, weight, ttl) {
+	return {
+		name: hostString(hostname, zone),
+		service: hostString(service, zone),
+		prio,
+		weight,
+		port,
+		ttl
+	};
+}
 function createZone(name, soa, SERIAL) {
 	const {
 		nameserver,
@@ -47,13 +57,14 @@ function createZone(name, soa, SERIAL) {
 		hosts: [],
 		ptrs: [],
 		ns: [],
-		mx: []
+		mx: [],
+		srv: []
 	};
 }
 
 export default function parseZone(zoneData, SERIAL) {
 	return Object.keys(zoneData).map((name) => {
-		const { soa, hosts, addresses, nameserver, mx } = zoneData[name];
+		const { soa, hosts, addresses, nameserver, mx, srv } = zoneData[name];
 		const zone = createZone(name, soa, SERIAL);
 
 		for (const host in addresses) {
@@ -127,6 +138,25 @@ export default function parseZone(zoneData, SERIAL) {
 						zone.ptrs.push(createPtr(name, host, ip, ttl));
 				});
 			}
+		}
+		for (const service in srv) {
+			const info = srv[service];
+			const ttl = isNaN(info.at(-1)) ? undefined : info.pop();
+			let prio = 5;
+			let weight = 0;
+			let port = -1;
+			if (!isNaN(info.at(0)) && !isNaN(info.at(1)) && !isNaN(info.at(2))) {
+				prio = info.shift();
+				weight = info.shift();
+				port = info.shift();
+			} else if (!isNaN(info.at(0)) && isNaN(info.at(1))) {
+				port = info.shift();
+			} else
+				throw new Error(
+					`Couldn't identify SRV record. It's [port, name] or [prio, weight, port, name]. Given: ${srv[service]}`
+				);
+			const host = info[0];
+			zone.srv.push(createSRV(name, host, service, port, prio, weight, ttl));
 		}
 		return zone;
 	});
