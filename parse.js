@@ -23,9 +23,12 @@ function createPtr(zone, hostname, ip, ttl) {
 }
 
 function createSRV(zone, hostname, service, port, prio, weight, ttl) {
+	let [name, protocol, ...rest] = service.split('.');
+	if (!name.startsWith('_')) name = `_${name}`;
+	if (!protocol.startsWith('_')) protocol = `_${protocol}`;
 	return {
 		name: hostString(hostname, zone),
-		service: hostString(service, zone),
+		service: hostString([name, protocol, ...rest].join('.'), zone),
 		prio,
 		weight,
 		port,
