@@ -3,6 +3,7 @@ import ipaddr from 'ipaddr.js';
 import { toArray } from './util.js';
 
 function hostString(host, zone) {
+	if (host === '.') return zone;
 	return host.endsWith('.') ? host : `${host}.${zone}.`;
 }
 
