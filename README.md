@@ -13,9 +13,7 @@ This is a simple nodejs project, so npm i will install all dependencies.
 A typical configuration file, test1.yaml in this case, will look like this:
 
     home.arpa:
-      soa:
-        nameserver: ns1.home.arpa
-        email: admin@some.email.address
+      email: admin@some.email.address
       nameserver:
         ns1: [192.168.1.1,fd00::1]
       mx:
@@ -64,10 +62,8 @@ will be
 
 ### Configuration structure
 The used yaml file has to belong to the following structure: The first level introduces dns domains. You could define multiple domains in just on file. The next level are the different types of dns entries. They are
- - soa
 
-   The soa entry defines a soa record. Zonefile will use sane defaults for most entries, so you only have to provide nameserver and email.
-   - **nameserver**: The primary nameserver of the domain 
+ - The soa entries define a soa record. Zonefile will use sane defaults for most entries, so you only have to provide at least one nameserver and an email.
    - **email**: The email address of the domain admin. @-chars will be converted to dots
    - **serial**: The serial number of the zone. It will be automatically computed if omitted.
    - **refresh**: Master slave refresh interval in seconds. 
@@ -78,7 +74,7 @@ The used yaml file has to belong to the following structure: The first level int
 
  - nameserver
    
-   This defines a nameserver entry. It can be an array of dns names or an object with host entries. If you provide an ip address for such an entry, it will generate an A/AAAA record for every provided ip and the corresponding ptr records.
+   This defines a nameserver entry. The first entry is the primary nameserver of the domain. It can be an array of dns names or an object with host entries. If you provide an ip address for such an entry, it will generate an A/AAAA record for every provided ip and the corresponding ptr records.
  - mx
    
    It defines the mx entries for the domain. It is an object with the mx names and at least the mx priority as first argument. If you provide ip addresses with this entry, zonefile will generate A/AAAA records and corresponding ptr records.
