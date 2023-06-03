@@ -31,7 +31,7 @@ const serial_file = options.serial ?? '.serial';
 
 const now = new Date();
 const SERIAL = Math.max(
-	now.getFullYear() * 1000000 + now.getMonth() * 10000 + now.getDate() * 100,
+	now.getFullYear() * 1000000 + (now.getMonth() + 1) * 10000 + now.getDate() * 100,
 	existsSync(serial_file) ? Number(readFileSync(serial_file)) + 1 : 0
 );
 

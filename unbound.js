@@ -27,9 +27,9 @@ function localPtr(writer, ip, ttl, name) {
 }
 
 function soa(writer, data) {
-	const { name, nameserver, email, serial, refresh, retry, expire, nrc_ttl, ttl } = data;
+	const { name, ns, email, serial, refresh, retry, expire, nrc_ttl, ttl } = data;
 
-	const value = `${nameserver} ${email.replace(
+	const value = `${ns[0].name} ${email.replace(
 		'@',
 		'.'
 	)}. ${serial} ${refresh} ${retry} ${expire} ${nrc_ttl}`;
