@@ -2,10 +2,10 @@
 import argparse
 import sys
 from datetime import datetime
-import yaml
-from collections import abc, namedtuple
+from collections import abc, namedtuple, defaultdict
 from ipaddress import ip_address, IPv4Address, IPv6Address
-from typing import TextIO, Tuple
+from typing import TextIO, Tuple, List, Dict
+import yaml
 
 REFRESH = 7200
 RETRY = 3600
@@ -44,13 +44,13 @@ def to_array(obj):
     return [obj] if obj else ()
 
 
-def to_ip(ip):
-    if not isinstance(ip, str):
-        return ip
+def to_ip(ip_addr):
+    if not isinstance(ip_addr, str):
+        return ip_addr
     try:
-        return ip_address(ip)
+        return ip_address(ip_addr)
     except ValueError:
-        return ip
+        return ip_addr
 
 
 def host_string(host, zone):
@@ -87,55 +87,67 @@ def init_argparse() -> argparse.ArgumentParser:
     return parser
 
 
-def calc_serial(serial_file):
+def load_serial(serial_file: str) -> int:
     ser = 0
     try:
-        with open(serial_file, "r") as file:
+        with open(serial_file, "r", encoding="UTF-8") as file:
             txt = file.read()
             if txt:
-                ser = int(txt) + 1
+                ser = int(txt)
     except FileNotFoundError:
         pass
+
+    return ser
+
+
+def write_serial(serial_file: str, serial: int) -> None:
+    with open(serial_file, "w", encoding="UTF-8") as file:
+        file.write(f"{serial}\n")
+
+
+def calc_serial(serial: int) -> int:
     now = datetime.now()
-    result = max(now.year * 1000000 + now.month * 10000 + now.day * 100, ser)
-    with open(serial_file, "w") as file:
-        file.write(f"{result}\n")
-    return result
+    return max(now.year * 1000000 + now.month * 10000 + now.day * 100, serial + 1)
 
 
 def parse_zone(zone_name, zone_data, serial):
-    addresses = zone_data.get("addresses", [])
-    a = []
+    a: Dict[str, List[ARecord]] = defaultdict(list)
     ptr = []
     ns = []
     mx = []
     srv = []
 
+    def extract_info(info):
+        ttl = info.pop() if len(info) > 0 and isinstance(info[-1], int) else None
+        convert = tuple(map(to_ip, info))
+        ips = set(filter(lambda x: isinstance(x, (IPv4Address, IPv6Address)), convert))
+        aliases = set(
+            map(lambda name: host_string(name, zone_name), filter(lambda x: not isinstance(x, (IPv4Address, IPv6Address)), convert))
+        )
+        return ttl, ips, aliases
+
+    addresses = zone_data.get("addresses", {})
     for host in addresses:
         name = host_string(host, zone_name)
         info = to_array(addresses[host])
-        ttl = info.pop() if len(info) > 0 and type(info[-1]) == int else None
-        convert = map(to_ip, info)
-        ips = tuple(filter(lambda x: isinstance(x, (IPv4Address, IPv6Address)), convert))
-        aliases = tuple(filter(lambda x: not isinstance(x, (IPv4Address, IPv6Address)), convert))
-        for ip in ips:
-            a.append(ARecord(name, ip, ttl))
-            for alias in aliases:
-                a.append(ARecord(host_string(alias, zone_name), ip, ttl))
+        ttl, ips, aliases = extract_info(info)
 
-    hosts = zone_data.get("hosts", [])
+        for ip in ips:
+            a[name].append(ARecord(name, ip, ttl))
+            for alias in aliases:
+                a[alias].append(ARecord(host_string(alias, zone_name), ip, ttl))
+
+    hosts = zone_data.get("hosts", {})
     for host in hosts:
         name = host_string(host, zone_name)
         info = to_array(hosts[host])
-        ttl = info.pop() if len(info) > 0 and type(info[-1]) == int else None
-        convert = tuple(map(to_ip, info))
-        ips = tuple(filter(lambda x: isinstance(x, (IPv4Address, IPv6Address)), convert))
-        aliases = tuple(filter(lambda x: not isinstance(x, (IPv4Address, IPv6Address)), convert))
+        ttl, ips, aliases = extract_info(info)
+
         for ip in ips:
-            a.append(ARecord(name, ip, ttl))
+            a[name].append(ARecord(name, ip, ttl))
             ptr.append(PtrRecord(name, ip, ttl))
             for alias in aliases:
-                a.append(ARecord(host_string(alias, zone_name), ip, ttl))
+                a[alias].append(ARecord(host_string(alias, zone_name), ip, ttl))
 
     nameserver = zone_data.get("nameserver", [])
     if isinstance(nameserver, str):
@@ -147,40 +159,48 @@ def parse_zone(zone_name, zone_data, serial):
         for host in nameserver:
             name = host_string(host, zone_name)
             info = to_array(nameserver[host])
-            ttl = info.pop() if len(info) > 0 and type(info[-1]) == int else None
-            convert = map(to_ip, info)
-            ips = tuple(filter(lambda x: isinstance(x, (IPv4Address, IPv6Address)), convert))
-            aliases = tuple(filter(lambda x: not isinstance(x, (IPv4Address, IPv6Address)), convert))
+            ttl, ips, aliases = extract_info(info)
+
+            if len(aliases) > 0:
+                raise ValueError("Aliases in nameserver declaration is not allowed")
+
             ns.append(NsRecord(zone_name, name, ttl))
 
             if len(ips) > 0:
-                if any(host.name == name for host in a):
+                if name in a:
+                    if len(set(map(lambda r: r.ip, a[name])) ^ ips) == 0:
+                        continue
+
                     raise ValueError(f"IPs for nameserver {name} submitted while already an A-record exists.")
 
                 for ip in ips:
-                    a.append(ARecord(name, ip, ttl))
+                    a[name].append(ARecord(name, ip, ttl))
                     if not any(host.ip == ip for host in ptr):
                         ptr.append(PtrRecord(name, ip, ttl))
 
-    for host, data in zone_data.get("mx", []).items():
+    for host, data in zone_data.get("mx", {}).items():
         name = host_string(host, zone_name)
         info = to_array(data)
         prio = info.pop(0)
         if not isinstance(prio, int):
             raise TypeError(f"First Argument to MX is prio (Number) not {type(prio)}: {zone_name} {host} {prio}")
-        ttl = info.pop() if len(info) > 0 and type(info[-1]) == int else None
-        convert = map(to_ip, info)
-        ips = tuple(filter(lambda x: isinstance(x, (IPv4Address, IPv6Address)), convert))
-        aliases = tuple(filter(lambda x: not isinstance(x, (IPv4Address, IPv6Address)), convert))
+
+        ttl, ips, aliases = extract_info(info)
+
+        if len(aliases) > 0:
+            raise ValueError("Aliases in mx declaration is not allowed")
 
         mx.append(MxRecord(zone_name, name, prio, ttl))
 
         if len(ips) > 0:
-            if any(host.name == name for host in a):
-                continue
+            if name in a:
+                if len(set(map(lambda r: r.ip, a[name])) ^ ips) == 0:
+                    continue
+
+                raise ValueError(f"IPs for mx {name} submitted while already an A-record exists.")
 
             for ip in ips:
-                a.append(ARecord(name, ip, ttl))
+                a[name].append(ARecord(name, ip, ttl))
                 if not any(host.ip == ip for host in ptr):
                     ptr.append(PtrRecord(name, ip, ttl))
 
@@ -192,7 +212,7 @@ def parse_zone(zone_name, zone_data, serial):
             protocol = f"_{protocol}"
         service_name = host_string(".".join([name, protocol, *domain]), zone_name)
 
-        ttl = info.pop() if len(info) > 0 and type(info[-1]) == int else None
+        ttl = info.pop() if len(info) > 0 and isinstance(info[-1], int) else None
         prio = 5
         weight = 0
         port = -1
@@ -257,7 +277,9 @@ def unbound(writer: TextIO, zones: Tuple[Zone]):
 
     writer.write("server:\n")
     for zone in zones:
-        writer.write(f"\n{INDENT}{LOCAL_ZONE} {zone.name} static\n")
+        zone_name = zone.name if zone.name.endswith(".") else f"{zone.name}."
+
+        writer.write(f"\n{INDENT}{LOCAL_ZONE} {zone_name} static\n")
         write_line(
             writer,
             LOCAL_DATA,
@@ -273,31 +295,44 @@ def unbound(writer: TextIO, zones: Tuple[Zone]):
         for mx in zone.mx:
             write_line(writer, LOCAL_DATA, f"{mx.zone}.", mx.ttl, "IN MX", f"{mx.prio} {mx.name}")
 
-        for host in zone.a:
-            write_line(
-                writer, LOCAL_DATA, host.name, host.ttl, f"IN {'A    ' if isinstance(host.ip, IPv4Address) else 'AAAA'}", host.ip
-            )
+        for hostname in zone.a:
+            for host in zone.a[hostname]:
+                write_line(
+                    writer, LOCAL_DATA, host.name, host.ttl, f"IN {'A    ' if isinstance(host.ip, IPv4Address) else 'AAAA'}", host.ip
+                )
+
+        for srv in zone.srv:
+            write_line(writer, LOCAL_DATA, srv.service, srv.ttl, "IN SRV", f"{srv.prio} {srv.weight} {srv.port} {srv.name}")
 
         for ptr in zone.ptr:
             write_line(writer, LOCAL_PTR, ptr.ip, ptr.ttl, "", ptr.name)
 
-        for srv in zone.srv:
-            write_line(writer, LOCAL_DATA, srv.service, srv.ttl, "IN SRV", f"{srv.prio} {srv.weight} {srv.port} {srv.name}")
+
+def process(input_data: str, writer, serial, output_format):
+    zones = parse(input_data, serial)
+
+    if output_format == "unbound":
+        unbound(writer, zones)
+    elif output_format == "nsd":
+        pass
+    else:
+        raise ValueError(f"Unknown format {output_format}")
 
 
 def main() -> None:
     parser = init_argparse()
     args = parser.parse_args()
-    serial = calc_serial(args.serial)
-    inputData = yaml.safe_load(args.input)
-    zones = parse(inputData, serial)
+    old_serial = load_serial(args.serial)
+    new_serial = calc_serial(old_serial)
+    input_data = yaml.safe_load(args.input)
 
-    if args.format == "unbound":
-        unbound(args.out, zones)
-    elif args.format == "nsd":
-        pass
-    else:
-        raise Exception(f"Unknown format {args.format}")
+    if input_data is None:
+        return
+
+    process(input_data, args.out, new_serial, args.format)
+
+    write_serial(args.serial, new_serial)
 
 
-main()
+if __name__ == "__main__":
+    main()
