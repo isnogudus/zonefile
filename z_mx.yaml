@@ -1,0 +1,9 @@
+zones:
+  home.arpa:
+    email: test@home.arpa
+    nameserver: 
+      ns1.home.arpa.: 192.168.0.1
+    mx:
+      mail: [10, 192.168.0.2]
+    hosts:
+      host1: [mail,192.168.0.2]
