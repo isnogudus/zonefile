@@ -2,3 +2,5 @@
 .serial
 node_modules
 zones.yaml
+__pycache__
+nsd/

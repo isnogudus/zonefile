@@ -1,0 +1,14 @@
+zones:
+  home.arpa:
+    email: test@home.arpa
+    nameserver: 
+      ns1.home.arpa.: 192.168.0.1
+    hosts:
+      host1: [ns1,host2, 192.168.0.1]
+
+  grid:
+    email: test2@grid
+    nameserver: 
+      ns1.home.arpa.: 192.168.0.1
+    hosts:
+      host1: [ns1,host2, 192.168.1.1]

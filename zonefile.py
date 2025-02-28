@@ -3,26 +3,26 @@ import argparse
 import sys
 from datetime import datetime
 from collections import abc, namedtuple, defaultdict
-from ipaddress import ip_address, IPv4Address, IPv6Address
+from ipaddress import ip_address, ip_network, IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from typing import TextIO, Tuple, List, Dict
 import yaml
-
-REFRESH = 7200
-RETRY = 3600
-EXPIRE = 1209600
-NRC_TTL = 3600
-TTL = 10800
+import os
 
 LOCAL_DATA = "local-data:     "
 LOCAL_ZONE = "local-zone:     "
 LOCAL_PTR = "local-data-ptr: "
 INDENT = " " * 4
 
+DEFAULTS = {}
+
 
 Zone = namedtuple(
     "ZONE",
     ("name", "email", "serial", "refresh", "retry", "expire", "nrc_ttl", "ttl", "a", "ptr", "ns", "mx", "srv"),
 )
+
+ReverseZone = namedtuple("ReverseZone", ("name", "email", "serial", "refresh", "retry", "expire", "nrc_ttl", "ttl", "network"))
+
 ARecord = namedtuple("ARecord", ("name", "ip", "ttl"))
 
 PtrRecord = namedtuple("PtrRecord", ("name", "ip", "ttl"))
@@ -70,11 +70,18 @@ def init_argparse() -> argparse.ArgumentParser:
     parser.add_argument(
         "-o",
         metavar="ZONEFILE",
-        default=sys.stdout,
+        default=None,
         dest="out",
-        type=argparse.FileType("w"),
-        help="Output zone data (default stdout).",
+        help="Output zone data file or directory (default stdout for unbound and ./nsd/ for nsd).",
     )
+    # parser.add_argument(
+    #     "-o",
+    #     metavar="ZONEFILE",
+    #     default=sys.stdout,
+    #     dest="out",
+    #     type=argparse.FileType("w"),
+    #     help="Output zone data (default stdout).",
+    # )
     parser.add_argument(
         "-s",
         metavar="SERIAL_FILE",
@@ -108,6 +115,13 @@ def write_serial(serial_file: str, serial: int) -> None:
 def calc_serial(serial: int) -> int:
     now = datetime.now()
     return max(now.year * 1000000 + now.month * 10000 + now.day * 100, serial + 1)
+
+
+def ljust(value, length: int) -> str:
+    value = str(value)
+    if len(value) >= length:
+        return value + " "
+    return value.ljust(length, " ")
 
 
 def parse_zone(zone_name, zone_data, serial):
@@ -241,11 +255,11 @@ def parse_zone(zone_name, zone_data, serial):
         name=zone_name,
         email=email,
         serial=zone_data.get("serial", serial),
-        refresh=zone_data.get("refresh", REFRESH),
-        retry=zone_data.get("retry", RETRY),
-        expire=zone_data.get("expire", EXPIRE),
-        nrc_ttl=zone_data.get("nrc_ttl", NRC_TTL),
-        ttl=zone_data.get("ttl", TTL),
+        refresh=zone_data.get("refresh", DEFAULTS["refresh"]),
+        retry=zone_data.get("retry", DEFAULTS["retry"]),
+        expire=zone_data.get("expire", DEFAULTS["expire"]),
+        nrc_ttl=zone_data.get("nrc-ttl", DEFAULTS["ntc-ttl"]),
+        ttl=zone_data.get("ttl", DEFAULTS["ttl"]),
         a=a,
         ptr=ptr,
         ns=ns,
@@ -254,8 +268,42 @@ def parse_zone(zone_name, zone_data, serial):
     )
 
 
-def parse(zones, serial):
-    return tuple(map(lambda zone: parse_zone(zone[0], zone[1], serial), zones.items()))
+def parse_reverse(zone_name, zone_data, serial):
+    if zone_data is None:
+        zone_data = {}
+    network = ip_network(zone_name, strict=False)
+
+    email = zone_data.get("email", DEFAULTS["email"]).replace("@", ".")
+    if not email.endswith("."):
+        email += "."
+
+    return ReverseZone(
+        name=zone_name,
+        email=email,
+        serial=zone_data.get("serial", serial),
+        refresh=zone_data.get("refresh", DEFAULTS["refresh"]),
+        retry=zone_data.get("retry", DEFAULTS["retry"]),
+        expire=zone_data.get("expire", DEFAULTS["expire"]),
+        nrc_ttl=zone_data.get("nrc-ttl", DEFAULTS["ntc-ttl"]),
+        ttl=zone_data.get("ttl", DEFAULTS["ttl"]),
+        network=network,
+    )
+
+
+def parse(data, serial):
+    defaults = data.get("defaults", {})
+
+    DEFAULTS["email"] = defaults.get("email")
+    DEFAULTS["nameserver"] = defaults.get("nameserver")
+    DEFAULTS["refresh"] = defaults.get("refresh", 7200)
+    DEFAULTS["retry"] = defaults.get("retry", 3600)
+    DEFAULTS["expire"] = defaults.get("expire", 1209600)
+    DEFAULTS["ntc-ttl"] = defaults.get("nrc-ttl", 3600)
+    DEFAULTS["ttl"] = defaults.get("ttl", 10800)
+    reverse_zones = data.get("reverse-zones", {})
+    reverse = tuple(map(lambda rzone: parse_reverse(rzone[0], rzone[1], serial), reverse_zones.items()))
+    zones = tuple(map(lambda zone: parse_zone(zone[0], zone[1], serial), data["zones"].items()))
+    return (zones, reverse)
 
 
 def unbound(writer: TextIO, zones: Tuple[Zone]):
@@ -297,9 +345,7 @@ def unbound(writer: TextIO, zones: Tuple[Zone]):
 
         for hostname in zone.a:
             for host in zone.a[hostname]:
-                write_line(
-                    writer, LOCAL_DATA, host.name, host.ttl, f"IN {'A    ' if isinstance(host.ip, IPv4Address) else 'AAAA'}", host.ip
-                )
+                write_line(writer, LOCAL_DATA, host.name, host.ttl, f"IN {'A    ' if host.ip.version == 4 else 'AAAA'}", host.ip)
 
         for srv in zone.srv:
             write_line(writer, LOCAL_DATA, srv.service, srv.ttl, "IN SRV", f"{srv.prio} {srv.weight} {srv.port} {srv.name}")
@@ -308,13 +354,132 @@ def unbound(writer: TextIO, zones: Tuple[Zone]):
             write_line(writer, LOCAL_PTR, ptr.ip, ptr.ttl, "", ptr.name)
 
 
+def nsd(writer: str, zones: Tuple[Zone], revers_zones: Tuple[ReverseZone]):
+    directory = writer
+    master_dir = f"{directory}/master"
+
+    os.makedirs(directory, exist_ok=True)
+    os.makedirs(master_dir, exist_ok=True)
+
+    def wline(writer, value, ttl, type, data, show_in=False):
+        if show_in:
+            i = "IN"
+        else:
+            i = ""
+
+        result = ljust(str(value), 16)
+        if show_in:
+            result += "IN"
+        else:
+            result += str(ttl)
+        result = ljust(result, 24)
+        result += str(type)
+        result = ljust(result, 32)
+        result += str(data)
+        result += "\n"
+
+        writer.write(result)
+
+    with open(f"{directory}/zones.conf", "w") as zone_conf:
+        ptr_zones = []
+
+        for zone in zones:
+            zone_name = zone.name[:-1] if zone.name.endswith(".") else zone.name
+            zone_conf.write("zone:\n")
+            zone_conf.write(f"    name: {zone_name}\n")
+            zone_conf.write(f"    zonefile: master/{zone_name}.zone\n")
+            with open(f"{master_dir}/{zone_name}.zone", "w") as zone_file:
+                zone_file.write(f"$ORIGIN {zone_name}.\n")
+                zone_file.write(f"$TTL {zone.ttl}\n")
+                zone_file.write("\n")
+                wline(zone_file, "@", "", "SOA", f"{zone.ns[0].name} {zone.email} (", show_in=True)
+                wline(zone_file, "", "", "", f"  {ljust(zone.serial,12)}; serial number")
+                wline(zone_file, "", "", "", f"  {ljust(zone.refresh,12)}; refresh")
+                wline(zone_file, "", "", "", f"  {ljust(zone.retry,12)}; retry")
+                wline(zone_file, "", "", "", f"  {ljust(zone.expire,12)}; expire")
+                wline(zone_file, "", "", "", f"  {ljust(zone.nrc_ttl,12)}; min ttl")
+                wline(zone_file, "", "", "", f")")
+
+                for ns in zone.ns:
+                    wline(zone_file, "", "", "NS", ns.name)
+
+                for mx in zone.mx:
+                    prio = "MX " + str(mx.prio).rjust(4, " ")
+                    wline(zone_file, "", "", prio, mx.name)
+
+                for hostname in zone.a:
+                    first = True
+                    name = hostname
+                    if name == f"{zone_name}.":
+                        name = "@"
+                    elif hostname.endswith(f"{zone_name}."):
+                        name = hostname[: -len(zone_name) - 2]
+                    hosts = zone.a[hostname]
+                    hosts4 = [h for h in hosts if h.ip.version == 4]
+                    hosts6 = [h for h in hosts if h.ip.version == 6]
+
+                    for host in hosts4:
+                        ttl = host.ttl if host.ttl is not None else ""
+                        if not first:
+                            name = ""
+                        first = False
+                        wline(zone_file, name, ttl, "A", host.ip)
+                    for host in hosts6:
+                        ttl = host.ttl if host.ttl is not None else ""
+                        if not first:
+                            name = ""
+                        first = False
+                        wline(zone_file, name, ttl, "AAAA", host.ip)
+
+                for srv in zone.srv:
+                    ttl = srv.ttl if srv.ttl is not None else ""
+                    service = srv.service[: -len(zone_name) - 2] if srv.service.endswith(f"{zone_name}.") else srv.service
+                    wline(zone_file, service, ttl, "SRV", f"{srv.prio} {srv.weight} {srv.port} {srv.name}")
+
+                ptr_zones = ptr_zones + zone.ptr
+
+        for reverse_zone in revers_zones:
+            print(reverse_zone)
+            ptrs = [ptr for ptr in ptr_zones if ptr.ip in reverse_zone.network]
+            if len(ptrs) == 0:
+                break
+            network = reverse_zone.network
+
+            if network.version == 4:
+                split = 32 - network.prefixlen >> 3
+            else:
+                split = 128 - network.prefixlen >> 2
+
+            zone_name = ".".join(network.network_address.reverse_pointer.split(".")[split:])
+            print(network, zone_name)
+            zone_conf.write("zone:\n")
+            zone_conf.write(f"    name: {zone_name}\n")
+            zone_conf.write(f"    zonefile: master/{zone_name}.zone\n")
+            with open(f"{master_dir}/{zone_name}.zone", "w") as zone_file:
+                zone_file.write(f"$ORIGIN {zone_name}.\n")
+                zone_file.write(f"$TTL {zone.ttl}\n")
+                zone_file.write("\n")
+                wline(zone_file, "@", "", "SOA", f"{zone.ns[0].name} {zone.email} (", show_in=True)
+                wline(zone_file, "", "", "", f"  {ljust(zone.serial,12)}; serial number")
+                wline(zone_file, "", "", "", f"  {ljust(zone.refresh,12)}; refresh")
+                wline(zone_file, "", "", "", f"  {ljust(zone.retry,12)}; retry")
+                wline(zone_file, "", "", "", f"  {ljust(zone.expire,12)}; expire")
+                wline(zone_file, "", "", "", f"  {ljust(zone.nrc_ttl,12)}; min ttl")
+                wline(zone_file, "", "", "", f")")
+
+                for ptr in ptrs:
+                    ip_entry = ".".join(ptr.ip.reverse_pointer.split(".")[:split])
+                    ttl = ptr.ttl if ptr.ttl is not None else ""
+                    zone_file.write(f"{ip_entry}\t{ttl}\tPTR\t{ptr.name}\n")
+
+
 def process(input_data: str, writer, serial, output_format):
     zones = parse(input_data, serial)
 
     if output_format == "unbound":
-        unbound(writer, zones)
+        unbound(writer, zones[0])
     elif output_format == "nsd":
-        pass
+        nsd(writer, zones[0], zones[1])
     else:
         raise ValueError(f"Unknown format {output_format}")
 
@@ -329,7 +494,18 @@ def main() -> None:
     if input_data is None:
         return
 
-    process(input_data, args.out, new_serial, args.format)
+    if args.format == "unbound":
+        if args.out is None:
+            out = sys.stdout
+        else:
+            out = open(args.out, "w")
+    elif args.format == "nsd":
+        if args.out is None:
+            out = "./nsd"
+        else:
+            out = args.out
+
+    process(input_data, out, new_serial, args.format)
 
     write_serial(args.serial, new_serial)
 
