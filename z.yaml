@@ -7,7 +7,7 @@ zones:
       host1: [ns1,host2, 192.168.0.1]
 
   grid:
-    email: test2@grid
+    email: test2@home.arpa
     nameserver: 
       ns1.home.arpa.: 192.168.0.1
     hosts:
