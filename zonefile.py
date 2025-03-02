@@ -367,14 +367,14 @@ def nsd(writer: str, zones: Tuple[Zone], revers_zones: Tuple[ReverseZone]):
         else:
             i = ""
 
-        result = ljust(str(value), 16)
+        result = ljust(str(value), 24)
         if show_in:
             result += "IN"
         else:
             result += str(ttl)
-        result = ljust(result, 24)
-        result += str(type)
         result = ljust(result, 32)
+        result += str(type)
+        result = ljust(result, 40)
         result += str(data)
         result += "\n"
 
@@ -439,7 +439,6 @@ def nsd(writer: str, zones: Tuple[Zone], revers_zones: Tuple[ReverseZone]):
                 ptr_zones = ptr_zones + zone.ptr
 
         for reverse_zone in revers_zones:
-            print(reverse_zone)
             ptrs = [ptr for ptr in ptr_zones if ptr.ip in reverse_zone.network]
             if len(ptrs) == 0:
                 break
@@ -451,7 +450,7 @@ def nsd(writer: str, zones: Tuple[Zone], revers_zones: Tuple[ReverseZone]):
                 split = 128 - network.prefixlen >> 2
 
             zone_name = ".".join(network.network_address.reverse_pointer.split(".")[split:])
-            print(network, zone_name)
+
             zone_conf.write("zone:\n")
             zone_conf.write(f"    name: {zone_name}\n")
             zone_conf.write(f"    zonefile: master/{zone_name}.zone\n")
