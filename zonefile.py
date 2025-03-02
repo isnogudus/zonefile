@@ -6,13 +6,14 @@ from collections import abc, namedtuple, defaultdict
 from ipaddress import ip_address, ip_network, IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from typing import TextIO, Tuple, List, Dict
 from functools import reduce
+from itertools import zip_longest
 import yaml
 import os
 
-LOCAL_DATA = "local-data:     "
-LOCAL_ZONE = "local-zone:     "
-LOCAL_PTR = "local-data-ptr: "
-INDENT = " " * 4
+LOCAL_DATA = "local-data:"
+LOCAL_ZONE = "local-zone:"
+LOCAL_PTR = "local-data-ptr:"
+INDENT = 4
 
 DEFAULTS = {}
 
@@ -36,6 +37,23 @@ SrvRecord = namedtuple(
     "SrvRecord",
     ("name", "service", "prio", "weight", "port", "ttl"),
 )
+
+
+#
+def w(format: tuple[int], values: tuple) -> str:
+    result = ""
+    index = 0
+    for length, value in zip_longest(format, values):
+        value = "" if value is None else str(value)
+
+        if result and result[-1] != " ":
+            result += " "
+
+        if length is not None:
+            index += length
+
+        result = (result + value).ljust(index)
+    return result
 
 
 def is_array(obj):
@@ -161,7 +179,8 @@ def parse_zone(zone_name, zone_data, serial):
 
         for ip in ips:
             a[name].append(ARecord(name, ip, ttl))
-            ptr.append(PtrRecord(name, ip, ttl))
+            if not name.startswith("*"):
+                ptr.append(PtrRecord(name, ip, ttl))
             for alias in aliases:
                 a[alias].append(ARecord(host_string(alias, zone_name), ip, ttl))
 
@@ -302,7 +321,7 @@ def parse(data, serial):
     DEFAULTS["expire"] = defaults.get("expire", 1209600)
     DEFAULTS["ntc-ttl"] = defaults.get("nrc-ttl", 3600)
     DEFAULTS["ttl"] = defaults.get("ttl", 10800)
-    print(DEFAULTS)
+
     reverse_zones = data.get("reverse-zones", {})
     if is_array(reverse_zones):
 
@@ -319,26 +338,25 @@ def parse(data, serial):
 
 def unbound(writer: TextIO, zones: Tuple[Zone]):
     def write_line(writer, cmd, left, ttl, middle, right):
-        writer.write(INDENT)
-        writer.write(str(cmd).ljust(15))
-        writer.write(' "')
-        writer.write(str(left).ljust(40))
-        writer.write(" ")
-        if ttl:
-            writer.write(str(ttl).ljust(6))
-        else:
-            writer.write(" " * 6)
-        writer.write(" ")
-        writer.write(str(middle).strip().ljust(7))
-        writer.write(" ")
-        writer.write(str(right))
-        writer.write('"\n')
+        data = w((40, 6, 8), (left, ttl, middle, right))
+        writer.write(
+            w(
+                (INDENT, 16),
+                (
+                    "",
+                    cmd,
+                    f'"{data}"',
+                ),
+            )
+        )
+        writer.write("\n")
 
     writer.write("server:\n")
     for zone in zones:
         zone_name = zone.name if zone.name.endswith(".") else f"{zone.name}."
 
-        writer.write(f"\n{INDENT}{LOCAL_ZONE} {zone_name} static\n")
+        writer.write(w((INDENT, 16), ("", LOCAL_ZONE, zone_name, "static")))
+        writer.write("\n")
         write_line(
             writer,
             LOCAL_DATA,
@@ -378,19 +396,8 @@ def nsd(writer: str, zones: Tuple[Zone], revers_zones: Tuple[ReverseZone]):
         else:
             i = ""
 
-        result = ljust(str(value), 24)
-        if show_in:
-            result += "IN"
-        else:
-            result += str(ttl)
-        result = ljust(result, 32)
-
-        result += str(type)
-        result = ljust(result, 40)
-        result += str(data)
-        result += "\n"
-
-        writer.write(result)
+        writer.write(w((24, 8, 8), (value, i, type, data)))
+        writer.write("\n")
 
     with open(f"{directory}/zones.conf", "w") as zone_conf:
         ptr_zones = []
