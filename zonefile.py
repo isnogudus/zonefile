@@ -5,6 +5,7 @@ from datetime import datetime
 from collections import abc, namedtuple, defaultdict
 from ipaddress import ip_address, ip_network, IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from typing import TextIO, Tuple, List, Dict
+from functools import reduce
 import yaml
 import os
 
@@ -37,11 +38,15 @@ SrvRecord = namedtuple(
 )
 
 
+def is_array(obj):
+    return isinstance(obj, abc.Sequence) and not isinstance(obj, str)
+
+
 def to_array(obj):
-    if isinstance(obj, abc.Sequence) and not isinstance(obj, str):
+    if is_array(obj):
         return obj
 
-    return [obj] if obj else ()
+    return [obj] if obj else []
 
 
 def to_ip(ip_addr):
@@ -118,10 +123,7 @@ def calc_serial(serial: int) -> int:
 
 
 def ljust(value, length: int) -> str:
-    value = str(value)
-    if len(value) >= length:
-        return value + " "
-    return value.ljust(length, " ")
+    return (str(value).rstrip() + " ").ljust(length, " ")
 
 
 def parse_zone(zone_name, zone_data, serial):
@@ -163,7 +165,7 @@ def parse_zone(zone_name, zone_data, serial):
             for alias in aliases:
                 a[alias].append(ARecord(host_string(alias, zone_name), ip, ttl))
 
-    nameserver = zone_data.get("nameserver", [])
+    nameserver = zone_data.get("nameserver", DEFAULTS["nameserver"])
     if isinstance(nameserver, str):
         ns.append(NsRecord(zone_name, host_string(nameserver, zone_name), None))
     elif isinstance(nameserver, abc.Sequence):
@@ -247,7 +249,7 @@ def parse_zone(zone_name, zone_data, serial):
         host = info[-1]
         srv.append(SrvRecord(host_string(host, zone_name), service_name, prio, weight, port, ttl))
 
-    email = zone_data["email"].replace("@", ".")
+    email = zone_data.get("email", DEFAULTS["email"]).replace("@", ".")
     if not email.endswith("."):
         email += "."
 
@@ -294,13 +296,22 @@ def parse(data, serial):
     defaults = data.get("defaults", {})
 
     DEFAULTS["email"] = defaults.get("email")
-    DEFAULTS["nameserver"] = defaults.get("nameserver")
+    DEFAULTS["nameserver"] = to_array(defaults.get("nameserver"))
     DEFAULTS["refresh"] = defaults.get("refresh", 7200)
     DEFAULTS["retry"] = defaults.get("retry", 3600)
     DEFAULTS["expire"] = defaults.get("expire", 1209600)
     DEFAULTS["ntc-ttl"] = defaults.get("nrc-ttl", 3600)
     DEFAULTS["ttl"] = defaults.get("ttl", 10800)
+    print(DEFAULTS)
     reverse_zones = data.get("reverse-zones", {})
+    if is_array(reverse_zones):
+
+        def to_dict(d, k):
+            d[k] = None
+            return d
+
+        reverse_zones = reduce(to_dict, reverse_zones, {})
+
     reverse = tuple(map(lambda rzone: parse_reverse(rzone[0], rzone[1], serial), reverse_zones.items()))
     zones = tuple(map(lambda zone: parse_zone(zone[0], zone[1], serial), data["zones"].items()))
     return (zones, reverse)
@@ -373,6 +384,7 @@ def nsd(writer: str, zones: Tuple[Zone], revers_zones: Tuple[ReverseZone]):
         else:
             result += str(ttl)
         result = ljust(result, 32)
+
         result += str(type)
         result = ljust(result, 40)
         result += str(data)
@@ -469,7 +481,8 @@ def nsd(writer: str, zones: Tuple[Zone], revers_zones: Tuple[ReverseZone]):
                 for ptr in ptrs:
                     ip_entry = ".".join(ptr.ip.reverse_pointer.split(".")[:split])
                     ttl = ptr.ttl if ptr.ttl is not None else ""
-                    zone_file.write(f"{ip_entry}\t{ttl}\tPTR\t{ptr.name}\n")
+                    wline(zone_file, ip_entry, ttl, "PTR", ptr.name)
+                    # zone_file.write(f"{ip_entry}\t{ttl}\tPTR\t{ptr.name}\n")
 
 
 def process(input_data: str, writer, serial, output_format):
