@@ -20,7 +20,7 @@ DEFAULTS = {}
 
 Zone = namedtuple(
     "ZONE",
-    ("name", "email", "serial", "refresh", "retry", "expire", "nrc_ttl", "ttl", "a", "ptr", "ns", "mx", "srv"),
+    ("name", "email", "serial", "refresh", "retry", "expire", "nrc_ttl", "ttl", "a", "ptr", "ns", "mx", "srv", "cname"),
 )
 
 ReverseZone = namedtuple("ReverseZone", ("name", "email", "serial", "refresh", "retry", "expire", "nrc_ttl", "ttl", "network"))
@@ -38,6 +38,7 @@ SrvRecord = namedtuple(
     ("name", "service", "prio", "weight", "port", "ttl"),
 )
 
+CnameRecord = namedtuple("CnameRecord", ("cname", "target", "ttl"))
 
 #
 def w(format: tuple[int], values: tuple) -> str:
@@ -150,6 +151,7 @@ def parse_zone(zone_name, zone_data, serial):
     ns = []
     mx = []
     srv = []
+    cnames = []
 
     def extract_info(info):
         ttl = info.pop() if len(info) > 0 and isinstance(info[-1], int) else None
@@ -268,6 +270,13 @@ def parse_zone(zone_name, zone_data, serial):
         host = info[-1]
         srv.append(SrvRecord(host_string(host, zone_name), service_name, prio, weight, port, ttl))
 
+    print("CNAME")
+    for source, host in zone_data.get("cnames", {}).items():
+        cname = host_string(source, zone_name)
+        target = host_string(host, zone_name)
+        ttl = target.pop() if len(target) > 0 and isinstance(target[-1], int) else None
+        cnames.append(CnameRecord(cname, target, None))
+
     email = zone_data.get("email", DEFAULTS["email"]).replace("@", ".")
     if not email.endswith("."):
         email += "."
@@ -286,6 +295,7 @@ def parse_zone(zone_name, zone_data, serial):
         ns=ns,
         mx=mx,
         srv=srv,
+        cname=cnames,
     )
 
 
@@ -379,6 +389,9 @@ def unbound(writer: TextIO, zones: Tuple[Zone]):
         for srv in zone.srv:
             write_line(writer, LOCAL_DATA, srv.service, srv.ttl, "IN SRV", f"{srv.prio} {srv.weight} {srv.port} {srv.name}")
 
+        for cname in zone.cname:
+            write_line(writer, LOCAL_DATA, cname.cname,cname.ttl,"CNAME", cname.target)
+
         for ptr in zone.ptr:
             write_line(writer, LOCAL_PTR, ptr.ip, ptr.ttl, "", ptr.name)
 
@@ -455,6 +468,10 @@ def nsd(writer: str, zones: Tuple[Zone], revers_zones: Tuple[ReverseZone]):
                     service = srv.service[: -len(zone_name) - 2] if srv.service.endswith(f"{zone_name}.") else srv.service
                     wline(zone_file, service, ttl, "SRV", f"{srv.prio} {srv.weight} {srv.port} {srv.name}")
 
+                for cname in zone.cname:
+                    ttl = cname.ttl if cname.ttl is not None else ""
+                    src = cname.cname[: -len(zone_name) - 2] if cname.cname.endswith(f"{zone_name}.") else cname.cname
+                    wline(zone_file, src, ttl, "CNAME", cname.target)
                 ptr_zones = ptr_zones + zone.ptr
 
         for reverse_zone in revers_zones:
