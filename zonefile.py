@@ -270,7 +270,6 @@ def parse_zone(zone_name, zone_data, serial):
         host = info[-1]
         srv.append(SrvRecord(host_string(host, zone_name), service_name, prio, weight, port, ttl))
 
-    print("CNAME")
     for source, host in zone_data.get("cnames", {}).items():
         cname = host_string(source, zone_name)
         target = host_string(host, zone_name)
