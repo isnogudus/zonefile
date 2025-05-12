@@ -6,6 +6,7 @@ zones:
     hosts:
       host1: [ns1, host2, 192.168.0.1]
     cnames:
+      '@': www.han.de.
       alpha: www.han.de.
       beta: host1
   grid:

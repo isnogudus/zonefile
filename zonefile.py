@@ -40,6 +40,7 @@ SrvRecord = namedtuple(
 
 CnameRecord = namedtuple("CnameRecord", ("cname", "target", "ttl"))
 
+
 #
 def w(format: tuple[int], values: tuple) -> str:
     result = ""
@@ -85,12 +86,8 @@ def host_string(host, zone):
 
 
 def init_argparse() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="zonefile", usage="%(prog)s [OPTION] [FILE]...", description="Program to generate zonefiles from yaml"
-    )
-    parser.add_argument(
-        "-i", metavar="INPUT", default=sys.stdin, dest="input", type=argparse.FileType("r"), help="Input YAML data (default stdin)."
-    )
+    parser = argparse.ArgumentParser(prog="zonefile", usage="%(prog)s [OPTION] [FILE]...", description="Program to generate zonefiles from yaml")
+    parser.add_argument("-i", metavar="INPUT", default=sys.stdin, dest="input", type=argparse.FileType("r"), help="Input YAML data (default stdin).")
     parser.add_argument(
         "-o",
         metavar="ZONEFILE",
@@ -157,9 +154,7 @@ def parse_zone(zone_name, zone_data, serial):
         ttl = info.pop() if len(info) > 0 and isinstance(info[-1], int) else None
         convert = tuple(map(to_ip, info))
         ips = set(filter(lambda x: isinstance(x, (IPv4Address, IPv6Address)), convert))
-        aliases = set(
-            map(lambda name: host_string(name, zone_name), filter(lambda x: not isinstance(x, (IPv4Address, IPv6Address)), convert))
-        )
+        aliases = set(map(lambda name: host_string(name, zone_name), filter(lambda x: not isinstance(x, (IPv4Address, IPv6Address)), convert)))
         return ttl, ips, aliases
 
     addresses = zone_data.get("addresses", {})
@@ -253,13 +248,7 @@ def parse_zone(zone_name, zone_data, serial):
         prio = 5
         weight = 0
         port = -1
-        if (
-            len(info) == 4
-            and isinstance(info[0], int)
-            and isinstance(info[1], int)
-            and isinstance(info[2], int)
-            and isinstance(info[3], str)
-        ):
+        if len(info) == 4 and isinstance(info[0], int) and isinstance(info[1], int) and isinstance(info[2], int) and isinstance(info[3], str):
             prio = info[0]
             weight = info[1]
             port = info[2]
@@ -389,7 +378,7 @@ def unbound(writer: TextIO, zones: Tuple[Zone]):
             write_line(writer, LOCAL_DATA, srv.service, srv.ttl, "IN SRV", f"{srv.prio} {srv.weight} {srv.port} {srv.name}")
 
         for cname in zone.cname:
-            write_line(writer, LOCAL_DATA, cname.cname,cname.ttl,"CNAME", cname.target)
+            write_line(writer, LOCAL_DATA, cname.cname, cname.ttl, "CNAME", cname.target)
 
         for ptr in zone.ptr:
             write_line(writer, LOCAL_PTR, ptr.ip, ptr.ttl, "", ptr.name)
@@ -469,7 +458,11 @@ def nsd(writer: str, zones: Tuple[Zone], revers_zones: Tuple[ReverseZone]):
 
                 for cname in zone.cname:
                     ttl = cname.ttl if cname.ttl is not None else ""
-                    src = cname.cname[: -len(zone_name) - 2] if cname.cname.endswith(f"{zone_name}.") else cname.cname
+                    src = cname.cname
+                    if src == f"{zone_name}.":
+                        src = "@"
+                    elif src.endswith(f"{zone_name}."):
+                        src = cname.cname[: -len(zone_name) - 2]
                     wline(zone_file, src, ttl, "CNAME", cname.target)
                 ptr_zones = ptr_zones + zone.ptr
 
