@@ -1,6 +1,23 @@
+# macOS
 .DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Project specific
 .serial
-node_modules
+
+# Generated zone files (keep example zones.toml)
+nsd/master/
+nsd/zones.conf
+
+# Legacy files (old YAML format)
 zones.yaml
-__pycache__
-nsd/
+node_modules/
