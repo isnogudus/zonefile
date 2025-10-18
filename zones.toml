@@ -1,0 +1,175 @@
+[defaults]
+email = "test@example.com"
+mx = {name = "mail.example.com.", prio = 10}
+mx-prio = 40
+nameserver = "ns1.example.com."
+
+[reverse]
+"10.0.1.0/24" = {}
+"10.0.2.0/24" = {}
+"10.0.3.0/24" = {}
+"10.0.4.0/24" = {}
+"fd00:1234:5678:1::/64" = {ttl = 10, nameserver = "ns2.example.com."}
+"fd00:1234:5678:2::/64" = {email = "admin@example.com"}
+
+[[zone]]
+mx = "mail.example.com"
+name = "unifi"
+with-ptr = false
+[zone.hosts]
+unifi = {alias = "@", ip = "10.0.1.5"}
+
+[[zone]]
+email = "john@example.com"
+mx = {name = "mail", prio = 20}
+name = "example.com"
+nameserver = "ns1"
+nrc-ttl = 300
+
+[zone.hosts]
+"*" = ["10.0.1.5", "fd00:1234:5678:1::5"]
+backup = ["10.0.1.4", "fd00:1234:5678:1::4"]
+db = "10.0.1.7"
+docker = {alias = [
+  "audiobookshelf",
+  "cloud",
+  "grafana",
+  "koel",
+  "portainer",
+  "swingmusic",
+  "traefik",
+  "whoami",
+], ip = [
+  "10.0.1.5",
+  "fd00:1234:5678:1::5",
+]}
+dumont = ["203.0.113.10", "2001:db8:1::1"]
+git = "10.0.1.6"
+ldap = "10.0.1.9"
+mail = ["10.0.1.20", "fd00:1234:5678:1::20"]
+mcp = ["10.0.1.2", "fd00:1234:5678:1::2"]
+mqtt = "10.0.1.111"
+sark = ["10.0.1.3", "fd00:1234:5678:1::3"]
+vault = "10.0.1.8"
+wopr = {alias = [
+  "@",
+  "cups",
+  "dns",
+  "ns1",
+  "ntp",
+  "proxy",
+  "router",
+  "smarthome",
+  "time",
+  "wpad",
+  "www",
+  "bookmarks",
+], ip = [
+  "10.0.1.1",
+  "fd00:1234:5678:1::1",
+]}
+
+airprint = "10.0.1.12"
+clu = ["10.0.1.11", "fd00:1234:5678:1::b"]
+jellyfin = ["10.0.1.13", "fd00:1234:5678:1::13"]
+rss = "10.0.1.16"
+stash = "10.0.1.14"
+
+samba = {ip = ["10.0.1.17", "fd00:1234:5678:1::11"], ttl = 10}
+
+music = "10.0.1.21"
+shiori = "10.0.1.23"
+
+homeassistant = "10.0.1.37"
+
+docker2 = {alias = [
+  "linkwarden",
+  "unifi",
+], ip = [
+  "10.0.1.48",
+  "fd00:1234:5678:1::30",
+]}
+
+printer = "10.0.1.200"
+
+hausswitch = "10.0.1.251"
+switch0 = "10.0.1.249"
+switch1 = "10.0.1.250"
+wifi0 = "10.0.1.253"
+wifi1 = "10.0.1.252"
+
+[zone.srv]
+"_caldavs._tcp" = {port = 443, target = "@"}
+"_carddavs._tcp" = {port = 443, target = "@"}
+"_mqtt._tcp" = {port = 1883, target = "mqtt"}
+"_mqtts._tcp" = {port = 8883, target = "mqtt"}
+"_secure-mqtt._tcp" = {port = 8883, target = "mqtt"}
+
+[[zone]]
+email = "jane@example.com"
+mx = [{name = "mail.example.com.", prio = 10}]
+name = "haus.example.com"
+nameserver = ["ns1.example.com."]
+
+hosts = {e3dc = "10.0.3.13", mygekko = "10.0.3.14", proxon = "10.0.3.15"}
+
+[[zone]]
+email = "john.doe@example.com"
+name = "smart.example.com"
+nameserver = "ns1.example.com."
+[zone.mx]
+name = "mail.example.com."
+prio = 10
+[zone.hosts]
+time = {alias = "mqtt", ip = "10.0.4.1"}
+
+shelly1minig3-5432044da1e0 = "10.0.4.25"
+shelly1minig3-5432045325e0 = "10.0.4.23"
+shelly1minig3-84fce6369a10 = "10.0.4.24"
+shelly1minig3-84fce636bc0c = "10.0.4.21"
+shelly1minig3-84fce6373d6c = "10.0.4.20"
+shelly1minig3-e4b32320d6c0 = "10.0.4.27"
+shelly1minig3-e4b32328e724 = "10.0.4.22"
+shelly1minig3-ecda3bc58158 = "10.0.4.26"
+shellyplus1-80646fdb543c = "10.0.4.28"
+
+shelly1pmg3-dcda0ce144ec = "10.0.4.31"
+shelly1pmg3-dcda0ce1450c = "10.0.4.32"
+shelly1pmminig3-543204408b8c = "10.0.4.30"
+
+shellyplussmoke-a0a3b3b843c4 = {ip = "10.0.4.40", ttl = 3600}
+
+shellypro1-ec62608b2e88 = "10.0.4.50"
+
+shellyplus2pm-30c922810434 = "10.0.4.64"
+shellyplus2pm-d48afc7603b0 = "10.0.4.63"
+shellyplus2pm-d48afc798ca8 = "10.0.4.62"
+shellyplus2pm-d48afc7e961c = "10.0.4.61"
+shellyplus2pm-d48afc7e9a34 = "10.0.4.60"
+
+shellyplug-s-DE7311 = "10.0.4.70"
+shellyplugsg3-8cbfea96f2b8 = "10.0.4.71"
+
+shellyplusi4-cc7b5c8af2f8 = "10.0.4.80"
+shellyplusi4-d8132ad27fc0 = "10.0.4.81"
+[zone.cname]
+buero_markus_heizung = "shellyplugsg3-8cbfea96f2b8"
+buero_markus_lampe = "shellyplus2pm-30c922810434"
+
+[[zone]]
+name = "grid.example.com"
+[zone.hosts]
+dumont = ["10.0.2.2", "fd00:1234:5678:2::2"]
+mcp = ["10.0.2.3", "fd00:1234:5678:2::3"]
+vincent = ["10.0.2.4", "fd00:1234:5678:2::4"]
+wopr = ["10.0.2.1", "fd00:1234:5678:2::1"]
+
+docker = {ip = ["10.0.2.69", "fd00:1234:5678:2::69"], ttl = 42}
+git = ["10.0.2.66", "fd00:1234:5678:2::66"]
+mail = ["10.0.2.67", "fd00:1234:5678:2::67"]
+matrix = ["10.0.2.65", "fd00:1234:5678:2::65"]
+meet = ["10.0.2.70", "fd00:1234:5678:2::70"]
+tron = ["10.0.2.71", "fd00:1234:5678:2::71"]
+twenty = ["10.0.2.68", "fd00:1234:5678:2::68"]
+[zone.cname]
+web = "wopr"
